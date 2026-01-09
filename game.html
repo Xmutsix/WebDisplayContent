@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Geometry Dash - Xmutsix Cloud</title>
+    
+    <!-- ПОДКЛЮЧАЕМ ТВОЮ МУЗЫКУ ИЗ ОБЛАКА -->
+    <script src="music.js"></script>
+    
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            background: #0a0a1a;
+            overflow: hidden;
+            font-family: 'Segoe UI', Arial, sans-serif;
+        }
+        
+        #game {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        
+        .overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 10, 26, 0.95);
+            text-align: center;
+            padding-top: 80px;
+            z-index: 100;
+        }
+        
+        .hidden { display: none; }
+        
+        h1 { font-size: 48px; color: #00d4ff; margin-bottom: 10px; letter-spacing: -2px; }
+        
+        .subtitle { color: #888; font-size: 16px; margin-bottom: 30px; }
+        
+        .btn {
+            font-size: 18px;
+            padding: 15px 40px;
+            margin: 10px;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            color: white;
+            font-weight: bold;
+            transition: 0.2s;
+        }
+        .btn:hover { transform: scale(1.05); }
+        .btn-play { background: #00a8cc; }
+        .btn-retry { background: #e74c3c; }
+        .btn-menu { background: #565f89; }
+        
+        .game-over-title { font-size: 52px; color: #e74c3c; margin-bottom: 10px; }
+        .score-display { font-size: 28px; color: #fff; margin-bottom: 10px; }
+        .best-score { font-size: 18px; color: #f1c40f; margin-bottom: 30px; }
+        
+        #hud {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            font-size: 18px;
+            color: white;
+            z-index: 50;
+        }
+        
+        #modeIndicator {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 10px;
+            font-size: 14px;
+            margin-top: 5px;
+            background: #00d4ff;
+            color: #000;
+            font-weight: bold;
+        }
+        
+        #musicStatus {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 12px;
+            color: #444;
+            z-index: 50;
+        }
+
+        /* КНОПКА ВОЗВРАТА В ХАБ ПРИЛОЖЕНИЙ */
+        .back-link {
+            position: absolute;
+            top: 15px;
+            left: 50%;
+            transform: translateX(-50%);
+            z-index: 200;
+            color: rgba(255,255,255,0.3);
+            text-decoration: none;
+            font-size: 11px;
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 6px 15px;
+            border-radius: 20px;
+            transition: 0.3s;
+            letter-spacing: 1px;
+        }
+        .back-link:hover {
+            color: #fff;
+            border-color: #00d4ff;
+            background: rgba(0,212,255,0.1);
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Навигация -->
+    <a href="index.html" class="back-link">&larr; BACK TO APP'S HUB</a>
+
+    <canvas id="game"></canvas>
+    
+    <div id="hud" class="hidden">
+        <div>Score: <span id="scoreText">0</span></div>
+        <div id="modeIndicator">CUBE</div>
+    </div>
+    
+    <div id="musicStatus">Music: loading...</div>
+    
+    <!-- Главное меню -->
+    <div id="menuScreen" class="overlay">
+        <h1>GEOMETRY DASH</h1>
+        <p class="subtitle">Cloud Version</p>
+        <button class="btn btn-play" id="btnPlay">START GAME</button>
+        <p style="color: #444; font-size: 12px; margin-top: 40px;">Click to Jump / Fly / Boost</p>
+    </div>
+    
+    <!-- Экран проигрыша -->
+    <div id="gameOverScreen" class="overlay hidden">
+        <div class="game-over-title">CRASHED</div>
+        <div class="score-display">Score: <span id="finalScore">0</span></div>
+        <div class="best-score">Best: <span id="bestScore">0</span></div>
+        <button class="btn btn-retry" id="btnRetry">RETRY</button>
+        <br>
+        <button class="btn btn-menu" onclick="location.href='index.html'">EXIT TO MENU</button>
+    </div>
+
+    <script>
+    // ============ POLYFILLS ============
+    var requestAnimFrame = window.requestAnimationFrame || window.webkitRequestAnimationFrame || function(c){ setTimeout(c, 17); };
+    
+    var storage = {
+        get: function(k){ try{return localStorage.getItem(k)}catch(e){return null} },
+        set: function(k,v){ try{localStorage.setItem(k,v)}catch(e){} }
+    };
+    
+    // ============ MUSIC SYSTEM ============
+    var bgMusic = null;
+    var musicReady = false;
+    var musicStatusEl = document.getElementById('musicStatus');
+    
+    function initMusic() {
+        if (typeof myAudioData === 'undefined') {
+            musicStatusEl.innerHTML = 'Music: Not Found';
+            return;
+        }
+        try {
+            bgMusic = new Audio();
+            bgMusic.oncanplaythrough = function() {
+                musicReady = true;
+                musicStatusEl.innerHTML = 'Music: Ready';
+                musicStatusEl.style.color = '#00ff88';
+            };
+            bgMusic.src = myAudioData;
+            bgMusic.loop = true;
+            bgMusic.volume = 0.4;
+            bgMusic.load();
+        } catch(e) { musicStatusEl.innerHTML = 'Music: Error'; }
+    }
+    initMusic();
+    
+    // ============ CANVAS SETUP ============
+    var canvas = document.getElementById('game');
+    var ctx = canvas.getContext('2d');
+    function res(){ canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+    window.onresize = res; res();
+    
+    // ============ CONFIG ============
+    var CONFIG = {
+        GAME_SPEED: 320,
+        GRAVITY: 2100,
+        CUBE_JUMP: 680,
+        SHIP_UP_FORCE: 950,
+        SHIP_DOWN_FORCE: 950,
+        UFO_BOOST: 500,
+        WAVE_SPEED: 520,
+        GROUND_HEIGHT: 80,
+        PLAYER_SIZE: 34,
+        MIN_GAP: 220,
+        MAX_GAP: 400,
+        PORTAL_CHANCE: 0.15
+    };
+    
+    // ============ STATE ============
+    var gamePhase = 'menu', score = 0, bestScore = parseInt(storage.get('gd_best')) || 0;
+    var distance = 0, nextSpawnX = 600, portalCooldown = 0;
+    var player = { x: 100, y: 0, vy: 0, rotation: 0, mode: 'cube', grounded: false, flyingUp: false };
+    var obstacles = [], portals = [], particles = [], inputJustPressed = false;
+
+    // ============ POOLING ============
+    function initPools() {
+        obstacles = []; portals = []; particles = [];
+        for(var i=0; i<20; i++) obstacles.push({active:false});
+        for(var i=0; i<5; i++) portals.push({active:false});
+        for(var i=0; i<50; i++) particles.push({active:false});
+    }
+
+    function resetGame() {
+        gamePhase = 'playing'; score = 0; distance = 0; nextSpawnX = 600; portalCooldown = 0;
+        player.mode = 'cube'; player.y = canvas.height - CONFIG.GROUND_HEIGHT - 40; player.vy = 0;
+        initPools();
+        document.getElementById('hud').className = '';
+        document.getElementById('menuScreen').className = 'overlay hidden';
+        document.getElementById('gameOverScreen').className = 'overlay hidden';
+        if(bgMusic && musicReady) { bgMusic.currentTime = 0; bgMusic.play(); }
+    }
+
+    // ============ GAME LOGIC (Simplified for performance) ============
+    function update(dt) {
+        if(gamePhase !== 'playing') return;
+        distance += CONFIG.GAME_SPEED * dt;
+        score = Math.floor(distance / 10);
+        document.getElementById('scoreText').innerText = score;
+
+        // Player Physics
+        var groundY = canvas.height - CONFIG.GROUND_HEIGHT;
+        if(player.mode === 'cube') {
+            player.vy += CONFIG.GRAVITY * dt;
+            player.y += player.vy * dt;
+            if(player.y >= groundY - CONFIG.PLAYER_SIZE) {
+                player.y = groundY - CONFIG.PLAYER_SIZE; player.vy = 0; player.grounded = true;
+                player.rotation = Math.round(player.rotation/90)*90;
+            } else { player.grounded = false; player.rotation += 360 * dt; }
+            if(inputJustPressed && player.grounded) { player.vy = -CONFIG.CUBE_JUMP; player.grounded = false; }
+        } 
+        else if(player.mode === 'ship') {
+            player.vy += (player.flyingUp ? -CONFIG.SHIP_UP_FORCE : CONFIG.SHIP_DOWN_FORCE) * dt;
+            if(player.vy < -450) player.vy = -450; if(player.vy > 450) player.vy = 450;
+            player.y += player.vy * dt; player.rotation = player.vy * 0.05;
+            if(inputJustPressed) player.flyingUp = !player.flyingUp;
+        }
+        else if(player.mode === 'ufo') {
+            if(inputJustPressed) player.vy = -CONFIG.UFO_BOOST;
+            player.vy += CONFIG.GRAVITY * 0.4 * dt; player.y += player.vy * dt;
+        }
+        else if(player.mode === 'wave') {
+            player.vy = (player.flyingUp ? -CONFIG.WAVE_SPEED : CONFIG.WAVE_SPEED);
+            player.y += player.vy * dt; player.rotation = player.vy > 0 ? 45 : -45;
+            if(inputJustPressed) player.flyingUp = !player.flyingUp;
+        }
+
+        if(player.y < 0) player.y = 0;
+        if(player.y > groundY - CONFIG.PLAYER_SIZE) player.y = groundY - CONFIG.PLAYER_SIZE;
+
+        // Obstacles & Portals
+        if(distance > nextSpawnX - canvas.width) spawnObstacle();
+        updateObjects(dt);
+    }
+
+    function spawnObstacle() {
+        var obj = null; for(var i=0; i<obstacles.length; i++) if(!obstacles[i].active){obj=obstacles[i]; break;}
+        if(!obj) return;
+        obj.active = true; obj.x = nextSpawnX; obj.w = 35; obj.h = 35;
+        obj.y = canvas.height - CONFIG.GROUND_HEIGHT - 35;
+        nextSpawnX += CONFIG.MIN_GAP + Math.random()*200;
+        
+        // Spawn Portal
+        if(Math.random() < CONFIG.PORTAL_CHANCE && portalCooldown <= 0) {
+            var p = null; for(var j=0; j<portals.length; j++) if(!portals[j].active){p=portals[j]; break;}
+            if(p){ 
+                p.active = true; p.x = nextSpawnX + 100; 
+                var modes = ['cube','ship','ufo','wave']; 
+                p.targetMode = modes[Math.floor(Math.random()*modes.length)];
+                portalCooldown = 800;
+            }
+        }
+        if(portalCooldown > 0) portalCooldown -= 10;
+    }
+
+    function updateObjects(dt) {
+        var speed = CONFIG.GAME_SPEED * dt;
+        for(var i=0; i<obstacles.length; i++) {
+            var o = obstacles[i]; if(!o.active) continue;
+            o.x -= speed;
+            if(o.x < -50) o.active = false;
+            // Collision
+            if(player.x < o.x+o.w && player.x+CONFIG.PLAYER_SIZE > o.x && player.y < o.y+o.h && player.y+CONFIG.PLAYER_SIZE > o.y) die();
+        }
+        for(var i=0; i<portals.length; i++) {
+            var p = portals[i]; if(!p.active) continue;
+            p.x -= speed;
+            if(player.x + CONFIG.PLAYER_SIZE > p.x && player.x < p.x+40) {
+                player.mode = p.targetMode; p.active = false;
+                document.getElementById('modeIndicator').innerText = player.mode.toUpperCase();
+            }
+        }
+    }
+
+    function die() {
+        gamePhase = 'dead'; if(bgMusic) bgMusic.pause();
+        if(score > bestScore) { bestScore = score; storage.set('gd_best', bestScore); }
+        document.getElementById('finalScore').innerText = score;
+        document.getElementById('bestScore').innerText = bestScore;
+        document.getElementById('gameOverScreen').className = 'overlay';
+    }
+
+    // ============ RENDER ============
+    function draw() {
+        ctx.fillStyle = '#0a0a1a'; ctx.fillRect(0,0,canvas.width,canvas.height);
+        var groundY = canvas.height - CONFIG.GROUND_HEIGHT;
+        
+        // Ground
+        ctx.fillStyle = '#1a1a2e'; ctx.fillRect(0, groundY, canvas.width, CONFIG.GROUND_HEIGHT);
+        ctx.strokeStyle = '#00d4ff'; ctx.lineWidth = 2; ctx.strokeRect(0, groundY, canvas.width, 2);
+
+        // Player
+        ctx.save();
+        ctx.translate(player.x + CONFIG.PLAYER_SIZE/2, player.y + CONFIG.PLAYER_SIZE/2);
+        ctx.rotate(player.rotation * Math.PI / 180);
+        ctx.fillStyle = player.mode === 'cube' ? '#00d4ff' : (player.mode === 'ship' ? '#e056fd' : '#00ff88');
+        ctx.fillRect(-CONFIG.PLAYER_SIZE/2, -CONFIG.PLAYER_SIZE/2, CONFIG.PLAYER_SIZE, CONFIG.PLAYER_SIZE);
+        ctx.strokeStyle = 'white'; ctx.strokeRect(-CONFIG.PLAYER_SIZE/2, -CONFIG.PLAYER_SIZE/2, CONFIG.PLAYER_SIZE, CONFIG.PLAYER_SIZE);
+        ctx.restore();
+
+        // Objects
+        ctx.fillStyle = '#e74c3c';
+        for(var i=0; i<obstacles.length; i++) {
+            var o = obstacles[i]; if(o.active) {
+                ctx.beginPath(); ctx.moveTo(o.x, o.y+o.h); ctx.lineTo(o.x+o.w/2, o.y); ctx.lineTo(o.x+o.w, o.y+o.h); ctx.fill();
+            }
+        }
+        for(var i=0; i<portals.length; i++) {
+            var p = portals[i]; if(p.active) {
+                ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fillRect(p.x, 0, 30, groundY);
+                ctx.fillStyle = 'white'; ctx.fillText(p.targetMode, p.x, 50);
+            }
+        }
+    }
+
+    // ============ LOOP ============
+    var last = 0;
+    function loop(t) {
+        var dt = (t - last) / 1000; last = t;
+        if(dt > 0.1) dt = 0.1;
+        update(dt); draw();
+        inputJustPressed = false;
+        requestAnimFrame(loop);
+    }
+
+    function handleInput(e) { e.preventDefault(); inputJustPressed = true; }
+    canvas.addEventListener('mousedown', handleInput);
+    canvas.addEventListener('touchstart', handleInput);
+    document.getElementById('btnPlay').onclick = resetGame;
+    document.getElementById('btnRetry').onclick = resetGame;
+
+    initPools();
+    requestAnimFrame(loop);
+    </script>
+</body>
+</html>
